@@ -1,8 +1,7 @@
 name: Proponi post
 
 on:
-  schedule:
-    - cron: '0 8 * * 1,4'  # Lunedì e giovedì alle 8 UTC (9/10 ora italiana)
+  # ⚠️ DISABILITATO — sostituito da cron_agent.yml (Python + Make.com)
   workflow_dispatch:
 
 jobs:

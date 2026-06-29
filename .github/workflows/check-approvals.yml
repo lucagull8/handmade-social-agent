@@ -1,8 +1,7 @@
 name: Controlla approvazioni
 
 on:
-  schedule:
-    - cron: '*/10 * * * *'  # Ogni 10 minuti
+  # ⚠️ DISABILITATO — il polling approvazioni ora lo gestisce Make.com
   workflow_dispatch:
 
 jobs:

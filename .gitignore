@@ -3,3 +3,6 @@ node_modules/
 .env.local
 .env.setup
 credentials.json
+
+# Tieni traccia delle immagini in post_da_pubblicare (non escludere)
+# post_da_pubblicare/
