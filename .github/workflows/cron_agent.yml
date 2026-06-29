@@ -2,7 +2,8 @@ name: Agent AI — Proponi Post
 
 on:
   schedule:
-    - cron: '0 8 * * 1,4'  # Lunedì e Giovedì alle 8:00 UTC (10:00 ora italiana estiva)
+    - cron: '0 9 * * 3'   # Mercoledì alle 11:00 ora italiana (estate) / 10:00 (inverno)
+    - cron: '0 8 * * 0'   # Domenica alle 10:00 ora italiana (estate) / 9:00 (inverno)
   workflow_dispatch:         # Avvio manuale da GitHub UI
 
 jobs:
