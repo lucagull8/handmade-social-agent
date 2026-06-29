@@ -1,7 +1,9 @@
 """
 agent_ai.py — Handmade by Leila
-Seleziona l'immagine più recente da /post_da_pubblicare/, genera copy con
-GPT-4o Vision e invia il payload al webhook Make.com per l'approvazione.
+1. Legge tutte le immagini da /post_da_pubblicare/ (esclude quelle già proposte)
+2. Usa GPT-4o Vision per scegliere la foto più adatta al feed Instagram
+3. Genera copy autentico per il post
+4. Invia il payload al webhook Make.com per l'approvazione via Telegram
 """
 
 import os
@@ -13,9 +15,10 @@ from pathlib import Path
 from openai import OpenAI
 
 # ── Config ───────────────────────────────────────────────────────────────────
-OPENAI_API_KEY  = os.environ["OPENAI_API_KEY"]
+OPENAI_API_KEY   = os.environ["OPENAI_API_KEY"]
 MAKE_WEBHOOK_URL = os.environ["MAKE_WEBHOOK_URL"]
-POST_FOLDER     = Path("post_da_pubblicare")
+POST_FOLDER      = Path("post_da_pubblicare")
+HISTORY_FILE     = Path("posted_images.json")
 
 BRAND_SYSTEM_PROMPT = """Sei il social media manager di "Handmade by Leila".
 Leila è un'artigiana italiana che crea oggetti fatti a mano con materiali naturali.
@@ -24,20 +27,42 @@ Tono: caldo, familiare, in prima persona — come se scrivessi a un'amica.
 Evita: linguaggio da marketing, emoji eccessive, paragoni con prodotti industriali, claim non veri."""
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
-def get_latest_image() -> Path:
-    """Restituisce l'immagine più recente (per data di modifica) nella cartella."""
-    extensions = {".jpg", ".jpeg", ".png", ".webp"}
-    images = [
-        f for f in POST_FOLDER.iterdir()
-        if f.is_file() and f.suffix.lower() in extensions
-    ]
-    if not images:
-        print("❌ Nessuna immagine trovata in post_da_pubblicare/ — skip.")
-        sys.exit(0)
+# ── Storia pubblicazioni ──────────────────────────────────────────────────────
+def load_history() -> list[str]:
+    """Carica la lista delle immagini già proposte."""
+    if HISTORY_FILE.exists():
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
 
-    images.sort(key=lambda f: f.stat().st_mtime, reverse=True)
-    return images[0]
+
+def save_history(history: list[str]):
+    """Salva la lista delle immagini già proposte."""
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, indent=2, ensure_ascii=False)
+
+
+# ── Selezione immagine ────────────────────────────────────────────────────────
+def get_all_images() -> list[Path]:
+    """Restituisce tutte le immagini in post_da_pubblicare/."""
+    extensions = {".jpg", ".jpeg", ".png", ".webp"}
+    return sorted(
+        [f for f in POST_FOLDER.iterdir() if f.is_file() and f.suffix.lower() in extensions],
+        key=lambda f: f.name
+    )
+
+
+def get_unposted_images(all_images: list[Path], history: list[str]) -> list[Path]:
+    """Filtra le immagini non ancora proposte. Se tutte pubblicate, resetta."""
+    posted_set = set(history)
+    unposted = [img for img in all_images if img.name not in posted_set]
+
+    if not unposted:
+        print("🔄 Tutte le immagini sono state proposte — ricominciamo dall'inizio!")
+        save_history([])
+        return all_images
+
+    return unposted
 
 
 def image_to_base64(path: Path) -> tuple[str, str]:
@@ -53,6 +78,69 @@ def image_to_base64(path: Path) -> tuple[str, str]:
         return base64.b64encode(f.read()).decode("utf-8"), mime
 
 
+def select_best_image(images: list[Path]) -> Path:
+    """
+    Se c'è solo un'immagine, la usa direttamente.
+    Altrimenti usa GPT-4o per scegliere la foto più adatta al feed Instagram.
+    """
+    if len(images) == 1:
+        print(f"   Solo 1 immagine disponibile: {images[0].name}")
+        return images[0]
+
+    print(f"   Analizzo {len(images)} immagini con GPT-4o per scegliere la migliore...")
+
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    content = []
+    for img in images:
+        b64, mime = image_to_base64(img)
+        content.append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:{mime};base64,{b64}",
+                "detail": "low"  # "low" per risparmiare token nella selezione
+            }
+        })
+
+    filenames = ", ".join(img.name for img in images)
+    content.append({
+        "type": "text",
+        "text": (
+            f"Sei il social media manager di 'Handmade by Leila', brand artigianale italiano.\n"
+            f"Hai {len(images)} foto disponibili da pubblicare su Instagram (mostrate nell'ordine sopra).\n\n"
+            "Scegli QUALE pubblicare ADESSO considerando:\n"
+            "- Impatto visivo e qualità della foto\n"
+            "- Varietà rispetto ai post tipici di un feed artigianale (colori, soggetto, composizione)\n"
+            "- Quale cattura meglio l'essenza del brand 'fatto a mano con amore'\n\n"
+            f"Scegli tra: {filenames}\n\n"
+            "Rispondi SOLO con il nome esatto del file scelto. Nessun altro testo."
+        )
+    })
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": "Sei un esperto di Instagram aesthetics e social media per brand artigianali."},
+            {"role": "user", "content": content}
+        ],
+        max_tokens=50,
+        temperature=0.3,
+    )
+
+    chosen_name = response.choices[0].message.content.strip().strip('"').strip("'")
+    print(f"   GPT-4o ha scelto: {chosen_name}")
+
+    # Trova l'immagine corrispondente
+    for img in images:
+        if img.name == chosen_name or img.name in chosen_name or chosen_name in img.name:
+            return img
+
+    # Fallback se il nome non corrisponde esattamente
+    print(f"   ⚠️ Nome '{chosen_name}' non corrisponde esattamente — uso il primo disponibile.")
+    return images[0]
+
+
+# ── Generazione copy ──────────────────────────────────────────────────────────
 def generate_copy(image_path: Path) -> dict:
     """Chiama GPT-4o Vision e ritorna dict con caption, hashtags, alt_text."""
     client = OpenAI(api_key=OPENAI_API_KEY)
@@ -105,37 +193,33 @@ def generate_copy(image_path: Path) -> dict:
     return json.loads(content)
 
 
+# ── Invio a Make ──────────────────────────────────────────────────────────────
 def get_raw_github_url(image_path: Path) -> str:
-    """Costruisce l'URL pubblico raw.githubusercontent.com per l'immagine."""
     repo   = os.environ.get("GITHUB_REPOSITORY", "lucagull8/handmade-social-agent")
     branch = os.environ.get("GITHUB_REF_NAME", "main")
-    # Usa forward slash anche su Windows
-    posix_path = image_path.as_posix()
-    return f"https://raw.githubusercontent.com/{repo}/{branch}/{posix_path}"
+    return f"https://raw.githubusercontent.com/{repo}/{branch}/{image_path.as_posix()}"
 
 
 def send_to_make(image_path: Path, copy: dict) -> dict:
-    """Invia il payload JSON al webhook Make.com."""
-    image_url     = get_raw_github_url(image_path)
-    hashtags_str  = " ".join(f"#{h.lstrip('#')}" for h in copy["hashtags"])
-    full_caption  = f"{copy['caption']}\n\n{hashtags_str}"
+    image_url    = get_raw_github_url(image_path)
+    hashtags_str = " ".join(f"#{h.lstrip('#')}" for h in copy["hashtags"])
+    full_caption = f"{copy['caption']}\n\n{hashtags_str}"
 
     payload = {
-        "image_url":       image_url,
-        "caption":         full_caption,
-        "alt_text":        copy.get("alt_text", ""),
-        "image_filename":  image_path.name,
+        "image_url":      image_url,
+        "caption":        full_caption,
+        "alt_text":       copy.get("alt_text", ""),
+        "image_filename": image_path.name,
     }
 
     print(f"\n📤 Invio payload a Make.com...")
-    print(f"   🖼  Immagine : {image_path.name}")
-    print(f"   🔗 URL      : {image_url}")
-    print(f"   💬 Caption  : {copy['caption'][:80]}{'...' if len(copy['caption']) > 80 else ''}")
+    print(f"   Immagine : {image_path.name}")
+    print(f"   URL      : {image_url}")
+    print(f"   Caption  : {copy['caption'][:80]}{'...' if len(copy['caption']) > 80 else ''}")
 
     resp = requests.post(MAKE_WEBHOOK_URL, json=payload, timeout=30)
     resp.raise_for_status()
-
-    print(f"   ✅ Make ha risposto: HTTP {resp.status_code}")
+    print(f"   Make ha risposto: HTTP {resp.status_code}")
     return payload
 
 
@@ -144,16 +228,39 @@ def main():
     print("🤖 Agent AI — Handmade by Leila")
     print("=" * 42)
 
-    # 1. Trova l'immagine più recente
-    image_path = get_latest_image()
-    print(f"📸 Immagine selezionata: {image_path.name}")
+    # 1. Carica storia pubblicazioni
+    history = load_history()
+    print(f"📋 Immagini già proposte: {len(history)}")
 
-    # 2. Genera copy con GPT-4o Vision
-    print("💬 Generazione copy con GPT-4o Vision...")
+    # 2. Trova tutte le immagini disponibili
+    all_images = get_all_images()
+    if not all_images:
+        print("❌ Nessuna immagine in post_da_pubblicare/ — skip.")
+        sys.exit(0)
+    print(f"🗂  Immagini totali nella cartella: {len(all_images)}")
+
+    # 3. Filtra le non ancora proposte
+    unposted = get_unposted_images(all_images, history)
+    print(f"📸 Immagini disponibili (non ancora proposte): {len(unposted)}")
+
+    # 4. GPT-4o sceglie la migliore per il feed
+    print("\n🎨 Selezione immagine ottimale per il feed...")
+    image_path = select_best_image(unposted)
+    print(f"✅ Immagine scelta: {image_path.name}")
+
+    # 5. Segna come proposta (prima di inviare, per sicurezza)
+    history = load_history()  # rilegge in caso di reset
+    if image_path.name not in history:
+        history.append(image_path.name)
+        save_history(history)
+        print(f"💾 {image_path.name} aggiunto a posted_images.json")
+
+    # 6. Genera copy con GPT-4o Vision
+    print("\n💬 Generazione copy con GPT-4o Vision...")
     copy = generate_copy(image_path)
-    print("✅ Copy generato con successo.")
+    print("✅ Copy generato!")
 
-    # 3. Invia a Make.com (che gestisce Telegram + Meta)
+    # 7. Invia a Make.com
     send_to_make(image_path, copy)
 
     print("\n🎉 Done! Il post è in coda su Make.com — attendi l'approvazione su Telegram.")
