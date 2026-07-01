@@ -78,16 +78,30 @@ def image_to_base64(path: Path) -> tuple[str, str]:
         return base64.b64encode(f.read()).decode("utf-8"), mime
 
 
+MAX_IMAGES_FOR_SELECTION = 10  # Max immagini da analizzare per scelta feed
+
+
 def select_best_image(images: list[Path]) -> Path:
     """
     Se c'è solo un'immagine, la usa direttamente.
-    Altrimenti usa GPT-4o per scegliere la foto più adatta al feed Instagram.
+    Altrimenti campiona fino a MAX_IMAGES_FOR_SELECTION immagini random
+    e usa GPT-4o per scegliere la più adatta al feed Instagram.
     """
+    import random
+
     if len(images) == 1:
         print(f"   Solo 1 immagine disponibile: {images[0].name}")
         return images[0]
 
-    print(f"   Analizzo {len(images)} immagini con GPT-4o per scegliere la migliore...")
+    # Se ci sono più immagini del limite, campiona casualmente
+    if len(images) > MAX_IMAGES_FOR_SELECTION:
+        candidates = random.sample(images, MAX_IMAGES_FOR_SELECTION)
+        print(f"   Campiono {MAX_IMAGES_FOR_SELECTION} immagini su {len(images)} disponibili...")
+    else:
+        candidates = images
+
+    print(f"   Analizzo {len(candidates)} immagini con GPT-4o per scegliere la migliore...")
+    images = candidates  # lavora sul campione
 
     client = OpenAI(api_key=OPENAI_API_KEY)
 
