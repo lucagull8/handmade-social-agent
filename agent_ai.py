@@ -13,6 +13,7 @@ import base64
 import json
 import random
 import shutil
+import time
 import requests
 from pathlib import Path
 from openai import OpenAI
@@ -23,6 +24,9 @@ MAKE_WEBHOOK_URL  = os.environ["MAKE_WEBHOOK_URL"]
 POST_FOLDER       = Path("post_da_pubblicare")
 PUBBLICATI_FOLDER = Path("pubblicati")
 MAX_CANDIDATES    = 10  # Max immagini analizzate da GPT-4o per la selezione
+
+# ID univoco per ogni run (GitHub lo fornisce automaticamente, fallback a timestamp)
+RUN_ID = os.environ.get("GITHUB_RUN_ID", str(int(time.time())))
 
 BRAND_SYSTEM_PROMPT = """Sei il social media manager di "Handmade by Leila".
 Leila è un'artigiana italiana che crea oggetti fatti a mano con materiali naturali.
@@ -180,6 +184,7 @@ def send_to_make(image_path: Path, copy: dict) -> dict:
     full_caption = f"{copy['caption']}\n\n{hashtags_str}"
 
     payload = {
+        "run_id":         RUN_ID,
         "image_url":      image_url,
         "caption":        full_caption,
         "alt_text":       copy.get("alt_text", ""),
