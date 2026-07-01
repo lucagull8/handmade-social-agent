@@ -10,7 +10,7 @@ jobs:
   agent:
     runs-on: ubuntu-latest
     permissions:
-      contents: write        # Serve per committare posted_images.json
+      contents: write        # Serve per committare lo spostamento in pubblicati/
 
     steps:
       - name: Checkout repo
@@ -30,10 +30,10 @@ jobs:
           MAKE_WEBHOOK_URL: ${{ secrets.MAKE_WEBHOOK_URL }}
         run: python agent_ai.py
 
-      - name: Salva posted_images.json
+      - name: Salva spostamento immagine pubblicata
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add posted_images.json
-          git diff --staged --quiet || git commit -m "chore: aggiorna posted_images.json [skip ci]"
+          git add post_da_pubblicare/ pubblicati/
+          git diff --staged --quiet || git commit -m "chore: sposta immagine pubblicata in pubblicati/ [skip ci]"
           git push
