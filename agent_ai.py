@@ -15,6 +15,7 @@ import random
 import shutil
 import time
 import requests
+from datetime import datetime, timezone, time as dt_time
 from pathlib import Path
 from openai import OpenAI
 
@@ -24,9 +25,57 @@ MAKE_WEBHOOK_URL  = os.environ["MAKE_WEBHOOK_URL"]
 POST_FOLDER       = Path("post_da_pubblicare")
 PUBBLICATI_FOLDER = Path("pubblicati")
 MAX_CANDIDATES    = 10  # Max immagini analizzate da GPT-4o per la selezione
+LAST_RUN_FILE     = Path("last_run.json")
 
 # ID univoco per ogni run (GitHub lo fornisce automaticamente, fallback a timestamp)
 RUN_ID = os.environ.get("GITHUB_RUN_ID", str(int(time.time())))
+
+# Giorno (Python weekday: Lunedì=0 ... Domenica=6) e ora UTC minima di pubblicazione.
+# Il workflow gira ogni 15 min in una finestra intorno a questi orari: se GitHub
+# Actions ritarda il trigger esatto, il primo tick utile dentro la finestra
+# esegue comunque la pubblicazione — niente più "non è ancora partito".
+SCHEDULE_UTC = {
+    2: dt_time(9, 0),   # Mercoledì, 09:00 UTC (11:00/10:00 ora italiana)
+    6: dt_time(8, 0),   # Domenica,   08:00 UTC (10:00/9:00 ora italiana)
+}
+
+
+def should_run_now(force: bool = False) -> bool:
+    """
+    Gate idempotente: esegue SOLO se
+    1) oggi è un giorno di pubblicazione programmato,
+    2) è già passato l'orario target di oggi,
+    3) non abbiamo già pubblicato oggi.
+    Evita sia i "non parte mai" (ritardo GitHub) sia i doppioni
+    (retry multipli nella stessa finestra oraria).
+    """
+    if force:
+        print("⚡ Esecuzione forzata (workflow_dispatch con force=true) — salto i controlli di orario.")
+        return True
+
+    now = datetime.now(timezone.utc)
+    today_str = now.date().isoformat()
+
+    target = SCHEDULE_UTC.get(now.weekday())
+    if target is None:
+        print(f"⏭️  Oggi ({now:%A}) non è un giorno di pubblicazione programmato — skip.")
+        return False
+
+    if now.time() < target:
+        print(f"⏭️  Ancora presto: sono le {now:%H:%M} UTC, target {target:%H:%M} UTC — skip, riprovo al prossimo tick.")
+        return False
+
+    if LAST_RUN_FILE.exists():
+        last = json.loads(LAST_RUN_FILE.read_text()).get("last_publish_date")
+        if last == today_str:
+            print(f"⏭️  Già pubblicato oggi ({today_str}) — skip per evitare doppioni.")
+            return False
+
+    return True
+
+
+def mark_run_done():
+    LAST_RUN_FILE.write_text(json.dumps({"last_publish_date": datetime.now(timezone.utc).date().isoformat()}, indent=2))
 
 BRAND_SYSTEM_PROMPT = """Sei il social media manager di "Handmade by Leila".
 Leila è un'artigiana italiana che crea oggetti fatti a mano con materiali naturali.
@@ -207,6 +256,10 @@ def main():
     print("🤖 Agent AI — Handmade by Leila")
     print("=" * 42)
 
+    force = os.environ.get("FORCE_RUN", "").lower() == "true"
+    if not should_run_now(force=force):
+        sys.exit(0)
+
     # 1. Trova immagini disponibili in post_da_pubblicare/
     images = get_images_to_publish()
     if not images:
@@ -230,6 +283,9 @@ def main():
 
     # 5. Invia a Make.com (URL punta a pubblicati/)
     send_to_make(published_path, copy)
+
+    # 6. Segna la pubblicazione di oggi come fatta (evita retry doppi nella finestra)
+    mark_run_done()
 
     print("\n🎉 Done! Il post è in coda su Make.com — attendi l'approvazione su Telegram.")
 

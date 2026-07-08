@@ -2,9 +2,18 @@ name: Agent AI — Proponi Post
 
 on:
   schedule:
-    - cron: '0 9 * * 3'   # Mercoledì alle 11:00 ora italiana (estate) / 10:00 (inverno)
-    - cron: '0 8 * * 0'   # Domenica alle 10:00 ora italiana (estate) / 9:00 (inverno)
+    # GitHub esegue gli schedule "best effort" e può ritardare anche di ore
+    # (osservato: fino a ~3h di ritardo). Per questo giriamo ogni 15 min in una
+    # finestra di alcune ore intorno all'orario target: il primo tick libero
+    # dentro la finestra pubblica, agent_ai.py garantisce che sia solo uno
+    # (idempotenza via last_run.json — vedi should_run_now()).
+    - cron: '*/15 8-13 * * 3,0'   # Mercoledì e Domenica, 08:00-13:59 UTC
   workflow_dispatch:         # Avvio manuale da GitHub UI
+    inputs:
+      force:
+        description: 'Forza la pubblicazione ignorando giorno/orario/idempotenza (solo test manuali)'
+        type: boolean
+        default: false
 
 jobs:
   agent:
@@ -28,12 +37,13 @@ jobs:
         env:
           OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
           MAKE_WEBHOOK_URL: ${{ secrets.MAKE_WEBHOOK_URL }}
+          FORCE_RUN:        ${{ github.event.inputs.force }}
         run: python agent_ai.py
 
       - name: Salva spostamento immagine pubblicata
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add post_da_pubblicare/ pubblicati/
+          git add post_da_pubblicare/ pubblicati/ last_run.json
           git diff --staged --quiet || git commit -m "chore: sposta immagine pubblicata in pubblicati/ [skip ci]"
           git push
