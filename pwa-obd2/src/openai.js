@@ -1,13 +1,23 @@
 // -----------------------------------------------------------------------------
 // Chiamata a OpenAI per interpretare i codici DTC in italiano semplice.
-// La API key è letta da localStorage (impostata dall'utente in Impostazioni).
-// Nessuna chiave viene mai inserita nel codice.
+//
+// Priorità di lettura della API key:
+//   1. localStorage (impostata dall'utente in Impostazioni)
+//   2. Variabile d'ambiente VITE_OPENAI_API_KEY (da .env.local)
+//
+// Il file .env.local è già in .gitignore: la chiave NON viene mai
+// committata nel repo, ma resta comoda perché non devi inserirla dall'UI
+// ogni volta che pulisci il browser. Vite espone al client le variabili
+// che iniziano con VITE_ (vedi https://vitejs.dev/guide/env-and-mode).
 // -----------------------------------------------------------------------------
 
 import { OPENAI_CONFIG } from './config.js';
 
+// Chiave dall'ambiente Vite (definita in .env.local, mai committata)
+const ENV_KEY = (import.meta.env && import.meta.env.VITE_OPENAI_API_KEY) || '';
+
 export function getApiKey() {
-  return localStorage.getItem(OPENAI_CONFIG.apiKeyStorageKey) || '';
+  return localStorage.getItem(OPENAI_CONFIG.apiKeyStorageKey) || ENV_KEY || '';
 }
 export function setApiKey(k) {
   if (!k) localStorage.removeItem(OPENAI_CONFIG.apiKeyStorageKey);

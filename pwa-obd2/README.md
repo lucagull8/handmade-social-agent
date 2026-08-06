@@ -50,10 +50,33 @@ Serve solo se vuoi le spiegazioni dei DTC generate dall'AI (fuori dalla DEMO,
 o in DEMO se vuoi vedere risposte "vere").
 
 1. Crea una chiave su <https://platform.openai.com/api-keys> (formato `sk-...`).
-2. Nell'app apri la scheda **Impostazioni**.
-3. Incolla la chiave nel campo **API key OpenAI** e premi **Salva**.
-4. La chiave viene salvata **solo nel tuo browser** (`localStorage`), non
-   viene mai messa nel codice né inviata a servizi diversi da OpenAI.
+2. **Consigliato**: imposta un *Hard limit* di spesa (Billing → Usage limits)
+   così sei protetto in caso di uso improprio.
+
+Poi hai due modi per usarla:
+
+### Modo A — dall'app (per singolo browser)
+
+1. Apri la scheda **Impostazioni**.
+2. Incolla la chiave nel campo **API key OpenAI** e premi **Salva**.
+3. La chiave resta nel `localStorage` del browser. Se pulisci i dati del
+   browser la devi reinserire.
+
+### Modo B — file `.env.local` (comodo su PC personale)
+
+1. Nella cartella `pwa-obd2/`, copia `.env.example` in `.env.local`:
+   ```powershell
+   copy .env.example .env.local
+   ```
+2. Apri `.env.local` con Blocco note e sostituisci il valore:
+   ```
+   VITE_OPENAI_API_KEY=sk-proj-la-tua-chiave-vera
+   ```
+3. Riavvia `npm run dev`. La chiave viene letta all'avvio e usata come
+   fallback quando `localStorage` è vuoto.
+4. Il file `.env.local` è in `.gitignore`: **non viene mai committato**.
+
+Priorità: `Impostazioni` (localStorage) → `.env.local` → nessuna chiave.
 
 Modello usato di default: `gpt-4o-mini` (cambia il valore in
 `src/config.js` → `OPENAI_CONFIG.model` se vuoi un altro).
