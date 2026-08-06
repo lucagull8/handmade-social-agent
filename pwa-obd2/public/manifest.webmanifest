@@ -1,0 +1,20 @@
+{
+  "name": "Diagnosi Auto — OBD2",
+  "short_name": "Diagnosi Auto",
+  "description": "PWA per leggere e interpretare gli errori del motore via adattatore OBD2 BLE (ELM327).",
+  "lang": "it",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

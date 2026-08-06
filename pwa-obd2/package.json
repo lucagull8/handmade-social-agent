@@ -1,0 +1,15 @@
+{
+  "name": "pwa-obd2-diagnosi",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "PWA in italiano per diagnosi auto via OBD2 (ELM327 BLE) con interpretazione GPT-4",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 5173"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  }
+}
