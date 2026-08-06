@@ -15,20 +15,33 @@
 // -----------------------------------------------------------------------------
 
 export const BLE_CONFIG = {
-  // Servizio principale (16-bit 0xFFF0 espanso)
-  primaryService: '0000fff0-0000-1000-8000-00805f9b34fb',
-
-  // Caratteristica per RICEVERE dati dall'ELM327 (notify)
-  notifyCharacteristic: '0000fff1-0000-1000-8000-00805f9b34fb',
-
-  // Caratteristica per INVIARE comandi all'ELM327 (write)
-  writeCharacteristic: '0000fff2-0000-1000-8000-00805f9b34fb',
-
-  // Servizi alternativi da dichiarare nel filtro di richiesta device
-  // (aiuta Chrome a mostrare anche adattatori che non pubblicizzano 0xFFF0)
-  alternativeServices: [
-    '000018f0-0000-1000-8000-00805f9b34fb',
-    '0000ffe0-0000-1000-8000-00805f9b34fb'
+  // Profili BLE da provare in cascata al momento del connect.
+  // Il primo che risponde con successo (servizio + caratteristiche presenti)
+  // viene usato. Aggiungi/riordina qui se hai un adattatore diverso.
+  //
+  // Copertura tipica dei cloni ELM327 BLE:
+  //   - Vgate iCar Pro classico              → FFF0 / FFF1 / FFF2
+  //   - IOS-Vlink, V-Link, HM-10 based       → FFE0 / FFE1 (una sola char)
+  //   - Alcuni Vgate/VEEPEAK BLE 4.0 recenti → 18F0 / 2AF0 / 2AF1
+  serviceProfiles: [
+    {
+      name: 'FFF0 (Vgate iCar Pro classico)',
+      service:      '0000fff0-0000-1000-8000-00805f9b34fb',
+      notifyChar:   '0000fff1-0000-1000-8000-00805f9b34fb',
+      writeChar:    '0000fff2-0000-1000-8000-00805f9b34fb'
+    },
+    {
+      name: 'FFE0 (IOS-Vlink / V-Link HM-10, single char)',
+      service:      '0000ffe0-0000-1000-8000-00805f9b34fb',
+      notifyChar:   '0000ffe1-0000-1000-8000-00805f9b34fb',
+      writeChar:    '0000ffe1-0000-1000-8000-00805f9b34fb'  // stessa char per read+write
+    },
+    {
+      name: '18F0 (Vgate/VEEPEAK BLE recenti)',
+      service:      '000018f0-0000-1000-8000-00805f9b34fb',
+      notifyChar:   '00002af0-0000-1000-8000-00805f9b34fb',
+      writeChar:    '00002af1-0000-1000-8000-00805f9b34fb'
+    }
   ],
 
   // Prefissi nome tipici degli adattatori (per il filtro di richiesta)

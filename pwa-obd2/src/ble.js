@@ -73,18 +73,17 @@ export class ElmBleClient {
       throw new Error('Il Bluetooth del PC sembra spento o non disponibile. Attivalo dalle impostazioni di Windows e riprova.');
     }
 
-    // Filtro: nomi tipici degli adattatori + servizio principale.
-    // "optionalServices" dichiara TUTTI i servizi che poi useremo.
+    // Filtro: nomi tipici degli adattatori + tutti i servizi noti.
+    // "optionalServices" dichiara TUTTI i servizi che poi useremo con
+    // getPrimaryService — se non li dichiariamo Chrome ci blocca con SecurityError.
     const filters = BLE_CONFIG.namePrefixes.map(prefix => ({ namePrefix: prefix }));
+    const allServices = BLE_CONFIG.serviceProfiles.map(p => p.service);
     // Includiamo anche il filtro per servizio (alcuni dongle non hanno nome)
-    filters.push({ services: [BLE_CONFIG.primaryService] });
+    for (const svc of allServices) filters.push({ services: [svc] });
 
     this.device = await navigator.bluetooth.requestDevice({
       filters,
-      optionalServices: [
-        BLE_CONFIG.primaryService,
-        ...BLE_CONFIG.alternativeServices
-      ]
+      optionalServices: allServices
     });
 
     this._log(`Device scelto: ${this.device.name || '(senza nome)'} — ${this.device.id}`);
@@ -98,12 +97,35 @@ export class ElmBleClient {
     this._log('Apertura connessione GATT...');
     this.server = await this.device.gatt.connect();
 
-    this._log('Ricerca servizio primario...');
-    this.service = await this.server.getPrimaryService(BLE_CONFIG.primaryService);
-
-    this._log('Ricerca caratteristiche fff1 (notify) e fff2 (write)...');
-    this.notifyChar = await this.service.getCharacteristic(BLE_CONFIG.notifyCharacteristic);
-    this.writeChar = await this.service.getCharacteristic(BLE_CONFIG.writeCharacteristic);
+    // Proviamo in cascata tutti i profili noti (FFF0, FFE0, 18F0, ...)
+    // Il primo che espone sia servizio che caratteristiche vince.
+    let lastErr = null;
+    for (const profile of BLE_CONFIG.serviceProfiles) {
+      try {
+        this._log(`Provo profilo BLE: ${profile.name}...`);
+        const service = await this.server.getPrimaryService(profile.service);
+        const notifyChar = await service.getCharacteristic(profile.notifyChar);
+        // Se notify e write sono la stessa char (es. FFE0/FFE1), riusiamola
+        const writeChar = profile.writeChar === profile.notifyChar
+          ? notifyChar
+          : await service.getCharacteristic(profile.writeChar);
+        this.service = service;
+        this.notifyChar = notifyChar;
+        this.writeChar = writeChar;
+        this._activeProfile = profile;
+        this._log(`✔ Profilo attivo: ${profile.name}`);
+        break;
+      } catch (err) {
+        this._log(`  ✗ profilo "${profile.name}" non disponibile: ${err.message}`);
+        lastErr = err;
+      }
+    }
+    if (!this.service) {
+      throw new Error(
+        `Nessun profilo BLE riconosciuto su questo adattatore. Ultimo errore: ${lastErr?.message || 'sconosciuto'}. ` +
+        `Se conosci gli UUID esatti del tuo dongle, aggiungili in src/config.js → BLE_CONFIG.serviceProfiles.`
+      );
+    }
 
     // Abilita le notify e collega il gestore di ricezione
     this.notifyChar.addEventListener('characteristicvaluechanged',
