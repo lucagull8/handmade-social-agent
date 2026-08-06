@@ -114,25 +114,24 @@ export function decodeDtc(byte1, byte2) {
 }
 
 // Parsa una risposta al comando "03" (lettura DTC).
-// Struttura tipica CAN: "43 03 P1 P2 P3 P4 P5 P6" dove 03 è il numero di DTC,
-// seguito da coppie di byte. Con protocolli non-CAN il formato varia.
-// Approccio pratico: prendiamo tutto l'hex, saltiamo il primo byte "43", e
-// leggiamo coppie di 2 byte finché non troviamo "0000" (padding) o finiamo.
+// Struttura tipica CAN: "43 03 P1 P2 P3 P4 P5 P6"  dove:
+//   - "43" = mode reply (0x40 + 0x03) — GIA' RIMOSSO da extractHexBytes
+//   - "03" = numero di DTC memorizzati (solo su protocolli CAN)
+//   - poi coppie di 2 byte, una per DTC, eventualmente terminate da "0000"
+// Su protocolli non-CAN (ISO/KWP) il byte "numero di DTC" spesso manca:
+// riconosciamo il caso ipotizzando che, se il primo byte NON coincide col
+// numero di DTC calcolato, sia gia' l'inizio del primo DTC.
 export function parseDtcResponse(raw) {
   const bytes = extractHexBytes(raw, '03', null);
   if (!bytes || bytes.length < 2) return [];
 
-  // Trova la prima occorrenza di "43" (mode 03 reply)
-  const idx = bytes.indexOf('43');
-  if (idx === -1) return [];
-  let cursor = idx + 2;
+  let cursor = 0;
 
-  // Molti veicoli CAN inseriscono un byte "numero di DTC" dopo il 43.
-  // Se il numero segnalato coincide con la quantità di byte residui, saltiamolo.
-  const dtcCountByte = bytes.substr(cursor, 2);
-  const remainingBytes = (bytes.length - cursor - 2) / 2;
-  const declaredCount = parseInt(dtcCountByte, 16);
-  if (!Number.isNaN(declaredCount) && remainingBytes / 2 >= declaredCount && declaredCount <= 20) {
+  // Se il primo byte residuo puo' plausibilmente essere il "conteggio DTC"
+  // atteso in CAN (valore <= 20 e coerente con lo spazio rimanente), lo saltiamo.
+  const maybeCount = parseInt(bytes.substr(cursor, 2), 16);
+  const remainingDtcSlots = (bytes.length - cursor - 2) / 4;
+  if (!Number.isNaN(maybeCount) && maybeCount <= 20 && maybeCount <= remainingDtcSlots) {
     cursor += 2;
   }
 
