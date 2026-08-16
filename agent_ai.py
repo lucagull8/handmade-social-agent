@@ -87,6 +87,11 @@ Evita: linguaggio da marketing, emoji eccessive, paragoni con prodotti industria
 # ── Selezione immagine ────────────────────────────────────────────────────────
 def get_images_to_publish() -> list[Path]:
     """Restituisce tutte le immagini disponibili in post_da_pubblicare/."""
+    # Rete di sicurezza: Git non traccia le cartelle vuote, quindi se
+    # l'ultimo run ha spostato l'ultima immagine in pubblicati/, la cartella
+    # potrebbe non esistere piu'. In quel caso la ricreiamo (vuota) invece
+    # di crashare con FileNotFoundError.
+    POST_FOLDER.mkdir(exist_ok=True)
     extensions = {".jpg", ".jpeg", ".png", ".webp"}
     images = [
         f for f in POST_FOLDER.iterdir()

@@ -1,0 +1,7 @@
+# Questa cartella contiene le immagini in attesa di essere pubblicate.
+# Il .gitkeep serve a mantenere la cartella tracciata da Git anche quando
+# e' vuota (Git non traccia le cartelle vuote): senza di lui, quando l'agent
+# sposta l'ultima immagine in pubblicati/ la cartella sparisce e il workflow
+# successivo esplode con FileNotFoundError.
+#
+# Non cancellare questo file.
