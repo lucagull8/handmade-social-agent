@@ -113,16 +113,15 @@ export function decodeDtc(byte1, byte2) {
   return (system + firstDigit + rest).toUpperCase();
 }
 
-// Parsa una risposta al comando "03" (lettura DTC).
-// Struttura tipica CAN: "43 03 P1 P2 P3 P4 P5 P6"  dove:
-//   - "43" = mode reply (0x40 + 0x03) — GIA' RIMOSSO da extractHexBytes
-//   - "03" = numero di DTC memorizzati (solo su protocolli CAN)
+// Parsa una risposta a comandi di lettura DTC (mode 03/07/0A).
+// Struttura tipica CAN: "<MR> <N> P1 P2 P3 P4 P5 P6"  dove:
+//   - "<MR>" = mode reply (0x40 + mode: 43 per 03, 47 per 07, 4A per 0A)
+//     GIA' RIMOSSO da extractHexBytes()
+//   - "<N>"  = numero di DTC (solo sui protocolli CAN)
 //   - poi coppie di 2 byte, una per DTC, eventualmente terminate da "0000"
-// Su protocolli non-CAN (ISO/KWP) il byte "numero di DTC" spesso manca:
-// riconosciamo il caso ipotizzando che, se il primo byte NON coincide col
-// numero di DTC calcolato, sia gia' l'inizio del primo DTC.
-export function parseDtcResponse(raw) {
-  const bytes = extractHexBytes(raw, '03', null);
+// Il parametro `mode` serve a dire a extractHexBytes quale prefisso togliere.
+export function parseDtcResponse(raw, mode = '03') {
+  const bytes = extractHexBytes(raw, mode, null);
   if (!bytes || bytes.length < 2) return [];
 
   let cursor = 0;

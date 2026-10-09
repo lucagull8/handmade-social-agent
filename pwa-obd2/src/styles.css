@@ -129,6 +129,15 @@ nav.tabs button:active { transform: translateY(1px); }
 .dtc-badge.med  { background: var(--warn-bg); color: var(--warn); }
 .dtc-badge.high { background: var(--bad-bg);  color: var(--bad); }
 
+/* Badge "tipo di codice": memorizzato / in sospeso / permanente */
+.dtc-kind {
+  padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap;
+}
+.dtc-kind.stored    { background: #fee2e2; color: #991b1b; }
+.dtc-kind.pending   { background: #fef3c7; color: #92400e; }
+.dtc-kind.permanent { background: #e0e7ff; color: #3730a3; }
+
 .dtc-body { margin-top: 12px; display: grid; gap: 10px; }
 .dtc-row { display: grid; grid-template-columns: 140px 1fr; gap: 12px; align-items: baseline; }
 .dtc-row .label { font-weight: 700; color: var(--muted); }

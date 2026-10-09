@@ -29,7 +29,7 @@ const state = {
   connecting: false,
   initDone: false,
   logs: [],
-  dtcCodes: [],               // array di stringhe "P0301"
+  dtcEntries: [],             // array di { code: 'P0301', kind: 'stored'|'pending'|'permanent' }
   dtcInterpretazioni: {},     // { P0301: { significato, ... } | { errore: '...' } }
   livePolling: null,          // handle setInterval
   liveData: { rpm: null, speed: null, coolant: null },
@@ -208,28 +208,38 @@ function screenDtc() {
   const controls = h('div', { class: 'panel stack' }, [
     h('h2', {}, 'Codici errore (spia motore)'),
     h('p', { class: 'muted' }, canReadWrite
-      ? 'Premi "Leggi codici" per interrogare la centralina.'
+      ? 'Interrogo la centralina per: codici memorizzati, in sospeso e permanenti.'
       : 'Prima devi collegarti (o avviare la modalità DEMO) nella scheda "Connessione".'),
     h('div', { class: 'row' }, [
       h('button', { class: 'btn primary', disabled: !canReadWrite, onclick: onLeggiDtc }, 'Leggi codici errore'),
-      h('button', { class: 'btn bad', disabled: !canReadWrite || state.dtcCodes.length === 0, onclick: onCancellaDtc }, 'Spegni spia (cancella)')
-    ])
+      h('button', { class: 'btn bad', disabled: !canReadWrite || state.dtcEntries.length === 0, onclick: onCancellaDtc }, 'Spegni spia (cancella)')
+    ]),
+    h('p', { class: 'muted', style: 'font-size: 14px; margin-top: 4px;' },
+      'Nota: airbag e ABS non si leggono via OBD-II standard — servono protocolli specifici del costruttore.')
   ]);
 
   const results = h('div', { class: 'stack' });
-  if (state.dtcCodes.length === 0) {
+  if (state.dtcEntries.length === 0) {
     results.appendChild(h('div', { class: 'panel callout ok' },
-      canReadWrite ? 'Nessun codice memorizzato al momento. Premi "Leggi codici" per interrogare la centralina.'
+      canReadWrite ? 'Nessun codice memorizzato, in sospeso o permanente. Premi "Leggi codici".'
                    : 'Collegati prima all\'adattatore per leggere i codici.'));
   } else {
-    for (const code of state.dtcCodes) {
-      results.appendChild(renderDtcCard(code));
+    for (const entry of state.dtcEntries) {
+      results.appendChild(renderDtcCard(entry));
     }
   }
   return h('div', { class: 'stack' }, [controls, results]);
 }
 
-function renderDtcCard(code) {
+const KIND_LABEL = {
+  stored:    'Memorizzato',
+  pending:   'In sospeso',
+  permanent: 'Permanente'
+};
+
+function renderDtcCard(entry) {
+  const code = entry.code;
+  const kind = entry.kind || 'stored';
   const interp = state.dtcInterpretazioni[code];
   const shortDesc = describeDtc(code);
 
@@ -247,6 +257,7 @@ function renderDtcCard(code) {
 
   const head = h('div', { class: 'dtc-head' }, [
     h('span', { class: 'dtc-code' }, code),
+    h('span', { class: `dtc-kind ${kind}` }, KIND_LABEL[kind] || kind),
     h('span', { class: 'dtc-desc' }, shortDesc),
     interp && !interp.errore ? h('span', { class: `dtc-badge ${badgeClass}` }, badgeText) : null,
     guidaText ? h('span', { class: `callout ${guidaClass}` }, guidaText) : null
@@ -265,7 +276,7 @@ function renderDtcCard(code) {
     ]);
   } else {
     body = h('div', { class: 'row' }, [
-      h('button', { class: 'btn primary', onclick: () => onInterpretaDtc(code) },
+      h('button', { class: 'btn primary', onclick: () => onInterpretaDtc(code, kind) },
         state.demo && !hasApiKey() ? 'Spiegami (DEMO)' : 'Spiegami con AI')
     ]);
   }
@@ -274,26 +285,40 @@ function renderDtcCard(code) {
 }
 
 async function onLeggiDtc() {
-  try {
-    log('Invio comando 03 (lettura DTC)...');
-    const raw = await state.client.sendCommand('03', { timeoutMs: 8000 });
-    log(`Risposta: ${raw.replace(/\n/g, ' | ')}`);
-    const codes = parseDtcResponse(raw);
-    state.dtcCodes = codes;
-    state.dtcInterpretazioni = {};
-    if (codes.length === 0) toast('ok', 'Nessun codice errore memorizzato.');
-    else toast('info', `Trovati ${codes.length} codici.`);
-    render();
-  } catch (err) {
-    log(`Errore lettura DTC: ${err.message}`);
-    toast('bad', umanizzaErroreObd(err.message));
+  state.dtcEntries = [];
+  state.dtcInterpretazioni = {};
+  render();
+  const letture = [
+    { mode: '03', kind: 'stored',    label: 'memorizzati' },
+    { mode: '07', kind: 'pending',   label: 'in sospeso' },
+    { mode: '0A', kind: 'permanent', label: 'permanenti' }
+  ];
+  let totale = 0;
+  for (const { mode, kind, label } of letture) {
+    try {
+      log(`Invio comando ${mode} (DTC ${label})...`);
+      const raw = await state.client.sendCommand(mode, { timeoutMs: 8000 });
+      log(`Risposta ${mode}: ${raw.replace(/\n/g, ' | ')}`);
+      const codes = parseDtcResponse(raw, mode);
+      for (const c of codes) state.dtcEntries.push({ code: c, kind });
+      totale += codes.length;
+    } catch (err) {
+      // Mode 07/0A possono non essere supportati su protocolli piu' vecchi:
+      // in quel caso andiamo avanti senza bloccare l'utente.
+      log(`Mode ${mode} non disponibile: ${err.message}`);
+    }
   }
+  if (totale === 0) toast('ok', 'Nessun codice (memorizzato, in sospeso, permanente).');
+  else toast('info', `Trovati ${totale} codici in totale.`);
+  render();
 }
 
 async function onCancellaDtc() {
   const ok = confirm(
     'ATTENZIONE\n\n' +
-    'Stai per cancellare i codici di errore e spegnere la spia motore.\n' +
+    'Stai per cancellare i codici memorizzati e in sospeso, e spegnere la spia motore.\n' +
+    'I codici "permanenti" non si cancellano con questo comando: spariscono da soli\n' +
+    'solo dopo che la centralina verifica più volte che il problema non c\'è più.\n\n' +
     'Se il problema è ancora presente la spia si riaccenderà da sola.\n\n' +
     'Vuoi procedere?'
   );
@@ -303,7 +328,8 @@ async function onCancellaDtc() {
     const raw = await state.client.sendCommand('04', { timeoutMs: 6000 });
     log(`Risposta: ${raw.replace(/\n/g, ' | ')}`);
     parseClearResponse(raw);
-    state.dtcCodes = [];
+    // Teniamo i permanenti perche' il mode 04 non li tocca; via gli altri.
+    state.dtcEntries = state.dtcEntries.filter(e => e.kind === 'permanent');
     state.dtcInterpretazioni = {};
     toast('ok', 'Codici cancellati. Se la spia era accesa dovrebbe spegnersi.');
     render();
@@ -313,7 +339,7 @@ async function onCancellaDtc() {
   }
 }
 
-async function onInterpretaDtc(code) {
+async function onInterpretaDtc(code, kind) {
   // In demo, se non c'è API key, usiamo l'interpretazione finta.
   if (state.demo && !hasApiKey()) {
     state.dtcInterpretazioni[code] = fakeInterpretazione(code);
@@ -323,7 +349,11 @@ async function onInterpretaDtc(code) {
   try {
     state.dtcInterpretazioni[code] = { significato: 'Chiedo all\'assistente AI...', causa_probabile: '', posso_guidare: '', perche_guida: '', urgenza: 'media', costo_indicativo_eur: '', cosa_fare: '' };
     render();
-    const res = await interpretaDtc(code, describeDtc(code));
+    // Includiamo l'informazione sul tipo di DTC nella descrizione passata al modello.
+    const kindNota = kind === 'pending' ? ' Nota: è un codice "in sospeso" (rilevato una volta, non ancora confermato).'
+                   : kind === 'permanent' ? ' Nota: è un codice "permanente" (rimane finché la centralina non verifica più volte che il problema è assente).'
+                   : '';
+    const res = await interpretaDtc(code, describeDtc(code) + kindNota);
     state.dtcInterpretazioni[code] = res;
   } catch (err) {
     state.dtcInterpretazioni[code] = { errore: err.message };

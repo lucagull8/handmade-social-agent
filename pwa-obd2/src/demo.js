@@ -48,6 +48,16 @@ export function createDemoClient({ onLog } = {}) {
         const bytesPairs = DEMO_DTCS.map(encodeDtcToBytes).join('');
         return `43 03 ${formatBytes(bytesPairs)}`.trim();
       }
+      if (c === '07') {
+        // Mode 07 — DTC in sospeso: ne restituiamo 1 (P0128)
+        const b = encodeDtcToBytes('P0128');
+        return `47 01 ${formatBytes(b)}`;
+      }
+      if (c === '0A') {
+        // Mode 0A — DTC permanenti: ne restituiamo 1 (P0420)
+        const b = encodeDtcToBytes('P0420');
+        return `4A 01 ${formatBytes(b)}`;
+      }
       if (c === '04') return '44';
       if (c === '010C') {
         // giri: (A*256+B)/4 = rpm  →  raw = rpm*4
